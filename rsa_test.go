@@ -45,7 +45,7 @@ func TestGenerateBlindSigningKey(t *testing.T) {
 	})
 }
 
-func TestFullProtocol(t *testing.T) {
+func TestRSAFullProtocol(t *testing.T) {
 	key := generateTestKey(t)
 	pub := &key.PublicKey
 	message := []byte("vote for candidate A")
@@ -74,7 +74,7 @@ func TestFullProtocol(t *testing.T) {
 	}
 }
 
-func TestVerifyRejectsTamperedMessage(t *testing.T) {
+func TestRSAVerifyRejectsTamperedMessage(t *testing.T) {
 	key := generateTestKey(t)
 	pub := &key.PublicKey
 	message := []byte("original message")
@@ -97,7 +97,7 @@ func TestVerifyRejectsTamperedMessage(t *testing.T) {
 	}
 }
 
-func TestVerifyRejectsWrongKey(t *testing.T) {
+func TestRSAVerifyRejectsWrongKey(t *testing.T) {
 	key1 := generateTestKey(t)
 	key2 := generateTestKey(t)
 	message := []byte("hello")
@@ -120,7 +120,7 @@ func TestVerifyRejectsWrongKey(t *testing.T) {
 	}
 }
 
-func TestVerifyRejectsRandomSignature(t *testing.T) {
+func TestRSAVerifyRejectsRandomSignature(t *testing.T) {
 	key := generateTestKey(t)
 	message := []byte("hello")
 
@@ -130,7 +130,7 @@ func TestVerifyRejectsRandomSignature(t *testing.T) {
 	}
 }
 
-func TestSignBlindedRejectsOutOfRange(t *testing.T) {
+func TestRSASignBlindedRejectsOutOfRange(t *testing.T) {
 	key := generateTestKey(t)
 
 	// zero
@@ -152,7 +152,7 @@ func TestSignBlindedRejectsOutOfRange(t *testing.T) {
 	}
 }
 
-func TestMultipleMessagesDistinct(t *testing.T) {
+func TestRSAMultipleMessagesDistinct(t *testing.T) {
 	key := generateTestKey(t)
 	pub := &key.PublicKey
 
@@ -193,7 +193,7 @@ func TestMultipleMessagesDistinct(t *testing.T) {
 	}
 }
 
-func TestDeterministicSignature(t *testing.T) {
+func TestRSADeterministicSignature(t *testing.T) {
 	// The same message should produce the same final signature (FDH is deterministic)
 	key := generateTestKey(t)
 	pub := &key.PublicKey
@@ -221,7 +221,7 @@ func TestDeterministicSignature(t *testing.T) {
 	}
 }
 
-func TestEmptyMessage(t *testing.T) {
+func TestRSAEmptyMessage(t *testing.T) {
 	key := generateTestKey(t)
 	pub := &key.PublicKey
 
@@ -242,7 +242,7 @@ func TestEmptyMessage(t *testing.T) {
 	}
 }
 
-func BenchmarkFullProtocol(b *testing.B) {
+func BenchmarkRSAFullProtocol(b *testing.B) {
 	key, err := GenerateBlindSigningKey(3072)
 	if err != nil {
 		b.Fatal(err)
