@@ -7,11 +7,12 @@
 //     Provides full unlinkability: the signer cannot correlate a signing
 //     session with the resulting signature.
 //
-//   - ML-DSA-65 blind signatures using hash commitments.
-//     Provides message hiding: the signer never sees the message content.
-//     Does NOT provide unlinkability — the signer can later link a signature
-//     to the signing session if they retained the blinded message.
-//     This scheme is quantum-resistant (NIST security level 3).
+//   - ML-DSA-65 blind signatures using an interactive Schnorr-over-lattice
+//     protocol. Provides full unlinkability via algebraic blinding (the client
+//     randomizes the commitment with A·α). Uses ML-DSA-65 key material with
+//     t = A·s1 (no s2 error term). Quantum-resistant (NIST security level 3).
+//     The protocol is 3-move: commit → challenge → respond, with possible
+//     retries on rejection sampling.
 package blindsig
 
 import "errors"

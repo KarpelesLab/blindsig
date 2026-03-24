@@ -2,104 +2,105 @@ package blindsig
 
 import (
 	"crypto/rand"
-	"crypto/sha3"
 	"errors"
 
 	"github.com/KarpelesLab/mldsa"
 )
 
-// ML-DSA blind signature constants.
+// ML-DSA blind signature sizes.
 const (
-	// mldsaTokenSize is the size of the random blinding token in bytes.
-	mldsaTokenSize = 32
+	// MLDSASignatureSize is the size of an ML-DSA-65 blind signature.
+	MLDSASignatureSize = mldsa.BlindSignatureSize65
 
-	// mldsaHashSize is the size of the blinded message hash in bytes.
-	mldsaHashSize = 64
+	// MLDSACommitmentSize is the size of the signer's commitment.
+	MLDSACommitmentSize = mldsa.BlindCommitmentSize65
 
-	// mldsaContext is the ML-DSA context string used for domain separation.
-	// This ensures blind signatures cannot be confused with regular ML-DSA signatures.
-	mldsaContext = "blindsig/mldsa65/v1"
+	// MLDSAChallengeSize is the size of the blinded challenge.
+	MLDSAChallengeSize = mldsa.BlindChallengeSize65
 
-	// MLDSASignatureSize is the total size of an ML-DSA blind signature
-	// (blinding token + ML-DSA-65 signature).
-	MLDSASignatureSize = mldsaTokenSize + mldsa.SignatureSize65
+	// MLDSAResponseSize is the size of the signer's response.
+	MLDSAResponseSize = mldsa.BlindResponseSize65
 )
+
+// ErrMLDSARetry indicates the signer's rejection sampling failed and the
+// protocol should restart from the commitment phase.
+var ErrMLDSARetry = mldsa.ErrBlindRetry
 
 // GenerateMLDSAKey generates an ML-DSA-65 key pair suitable for blind signing.
 func GenerateMLDSAKey() (*mldsa.Key65, error) {
 	return mldsa.GenerateKey65(rand.Reader)
 }
 
-// BlindMessageMLDSA blinds a message using a random token so it can be sent
-// to a signer without revealing its content.
-//
-// It returns the blinded message (a SHAKE256 hash commitment) and the blinding
-// factor (random token) needed to later construct the final signature.
-//
-// The blinded message is computed as SHAKE256(domain || token || message),
-// which is computationally hiding: the signer learns nothing about the
-// original message from the blinded value.
-func BlindMessageMLDSA(message []byte, pubKey *mldsa.PublicKey65) (blindedMsg []byte, blindingFactor []byte, err error) {
-	token := make([]byte, mldsaTokenSize)
-	if _, err := rand.Read(token); err != nil {
-		return nil, nil, err
-	}
-
-	blindedMsg = mldsaCommit(token, message)
-	return blindedMsg, token, nil
+// MLDSABlindPublicKey derives the blind signing public key from a private key.
+// The blind public key uses t = A·s1 (without the s2 error term from standard
+// ML-DSA), enabling algebraic blinding that provides true unlinkability.
+func MLDSABlindPublicKey(sk *mldsa.PrivateKey65) *mldsa.BlindPublicKey65 {
+	return sk.BlindPublicKey()
 }
 
-// SignBlindedMLDSA signs a blinded message using ML-DSA-65. The signer never
-// sees the original message — only the hash commitment.
-func SignBlindedMLDSA(blindedMsg []byte, privKey *mldsa.PrivateKey65) ([]byte, error) {
-	if len(blindedMsg) != mldsaHashSize {
-		return nil, errors.New("blindsig: invalid blinded message size")
-	}
-	return privKey.SignWithContext(rand.Reader, blindedMsg, []byte(mldsaContext))
-}
-
-// UnblindSignatureMLDSA assembles the final blind signature from the signer's
-// ML-DSA signature and the client's blinding factor.
+// MLDSASignerCommit starts a blind signing session. The signer generates a
+// commitment (w = A·y) to send to the client.
 //
-// The resulting signature is token || mldsaSig and can be verified by anyone
-// using VerifySignatureMLDSA.
-func UnblindSignatureMLDSA(blindSig []byte, blindingFactor []byte, pubKey *mldsa.PublicKey65) ([]byte, error) {
-	if len(blindSig) != mldsa.SignatureSize65 {
-		return nil, errors.New("blindsig: invalid ML-DSA signature size")
-	}
-	if len(blindingFactor) != mldsaTokenSize {
-		return nil, errors.New("blindsig: invalid blinding factor size")
-	}
-
-	sig := make([]byte, MLDSASignatureSize)
-	copy(sig[:mldsaTokenSize], blindingFactor)
-	copy(sig[mldsaTokenSize:], blindSig)
-	return sig, nil
+// Returns the signer session state and the commitment bytes.
+// The session must not be reused after [MLDSASignerRespond].
+func MLDSASignerCommit(sk *mldsa.PrivateKey65) (*mldsa.BlindSignerState65, []byte, error) {
+	return sk.NewBlindSession(rand.Reader)
 }
 
-// VerifySignatureMLDSA verifies an ML-DSA blind signature on the given message.
+// MLDSAClientChallenge creates a blinded challenge from the signer's commitment.
+// The client picks a random blinding vector α, computes w' = w + A·α, and
+// hashes to get the challenge.
 //
-// It recomputes the hash commitment from the embedded blinding token and the
-// message, then verifies the ML-DSA-65 signature on that commitment.
-func VerifySignatureMLDSA(message []byte, signature []byte, pubKey *mldsa.PublicKey65) bool {
-	if len(signature) != MLDSASignatureSize {
-		return false
-	}
-
-	token := signature[:mldsaTokenSize]
-	mldsaSig := signature[mldsaTokenSize:]
-
-	blindedMsg := mldsaCommit(token, message)
-	return pubKey.Verify(mldsaSig, blindedMsg, []byte(mldsaContext))
+// Returns the client state (for unblinding) and the challenge to send to the signer.
+func MLDSAClientChallenge(message, commitment []byte, bpk *mldsa.BlindPublicKey65) (*mldsa.BlindClientState65, []byte, error) {
+	return bpk.NewBlindChallenge(rand.Reader, message, commitment, nil)
 }
 
-// mldsaCommit computes the hash commitment: SHAKE256(domain || token || message).
-func mldsaCommit(token, message []byte) []byte {
-	h := sha3.NewSHAKE256()
-	h.Write([]byte("blindsig.mldsa65.commit\x00"))
-	h.Write(token)
-	h.Write(message)
-	out := make([]byte, mldsaHashSize)
-	h.Read(out)
-	return out
+// MLDSASignerRespond computes the signer's response to the client's challenge.
+//
+// Returns [ErrMLDSARetry] if rejection sampling fails — the caller should
+// create a new session with [MLDSASignerCommit] and restart the protocol.
+func MLDSASignerRespond(session *mldsa.BlindSignerState65, challenge []byte) ([]byte, error) {
+	return session.Respond(challenge)
+}
+
+// MLDSAClientUnblind removes the blinding from the signer's response, producing
+// a valid blind signature that anyone can verify.
+func MLDSAClientUnblind(state *mldsa.BlindClientState65, response []byte, bpk *mldsa.BlindPublicKey65) ([]byte, error) {
+	return bpk.Unblind(state, response)
+}
+
+// VerifySignatureMLDSA verifies an ML-DSA-65 blind signature on the given message.
+func VerifySignatureMLDSA(message []byte, signature []byte, bpk *mldsa.BlindPublicKey65) bool {
+	return bpk.BlindVerify(signature, message, nil)
+}
+
+// MLDSABlindSign runs the full blind signing protocol, handling retries
+// automatically. This is a convenience function for when both parties are
+// local (e.g., testing). For real protocols, use the individual steps.
+//
+// Returns the blind signature or an error if signing fails after maxRetries.
+func MLDSABlindSign(message []byte, sk *mldsa.PrivateKey65, bpk *mldsa.BlindPublicKey65, maxRetries int) ([]byte, error) {
+	if maxRetries <= 0 {
+		maxRetries = 100
+	}
+	for i := 0; i < maxRetries; i++ {
+		session, commitment, err := sk.NewBlindSession(rand.Reader)
+		if err != nil {
+			return nil, err
+		}
+		state, challenge, err := bpk.NewBlindChallenge(rand.Reader, message, commitment, nil)
+		if err != nil {
+			return nil, err
+		}
+		response, err := session.Respond(challenge)
+		if errors.Is(err, mldsa.ErrBlindRetry) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		return bpk.Unblind(state, response)
+	}
+	return nil, errors.New("blindsig: ML-DSA blind signing failed after max retries")
 }

@@ -8,145 +8,135 @@ import (
 	"github.com/KarpelesLab/mldsa"
 )
 
-func generateMLDSATestKey(t *testing.T) *mldsa.Key65 {
+func mldsaTestSign(t *testing.T, sk *mldsa.PrivateKey65, bpk *mldsa.BlindPublicKey65, message []byte) []byte {
 	t.Helper()
-	key, err := GenerateMLDSAKey()
+	sig, err := MLDSABlindSign(message, sk, bpk, 100)
 	if err != nil {
-		t.Fatalf("GenerateMLDSAKey: %v", err)
+		t.Fatal(err)
 	}
-	return key
+	return sig
 }
 
 func TestMLDSAFullProtocol(t *testing.T) {
-	key := generateMLDSATestKey(t)
-	pub := key.PublicKey()
+	key, err := GenerateMLDSAKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
 	message := []byte("vote for candidate A")
 
-	// Step 1: Client blinds the message
-	blindedMsg, token, err := BlindMessageMLDSA(message, pub)
+	// Step 1: Signer creates commitment
+	session, commitment, err := MLDSASignerCommit(&key.PrivateKey65)
 	if err != nil {
-		t.Fatalf("BlindMessageMLDSA: %v", err)
+		t.Fatal(err)
 	}
 
-	// Step 2: Server signs the blinded message
-	blindSig, err := SignBlindedMLDSA(blindedMsg, &key.PrivateKey65)
+	// Step 2: Client creates blinded challenge
+	state, challenge, err := MLDSAClientChallenge(message, commitment, bpk)
 	if err != nil {
-		t.Fatalf("SignBlindedMLDSA: %v", err)
+		t.Fatal(err)
 	}
 
-	// Step 3: Client unblinds the signature
-	sig, err := UnblindSignatureMLDSA(blindSig, token, pub)
-	if err != nil {
-		t.Fatalf("UnblindSignatureMLDSA: %v", err)
+	// Step 3: Signer responds (retry on rejection)
+	var response []byte
+	for {
+		response, err = MLDSASignerRespond(session, challenge)
+		if err == ErrMLDSARetry {
+			session, commitment, err = MLDSASignerCommit(&key.PrivateKey65)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state, challenge, err = MLDSAClientChallenge(message, commitment, bpk)
+			if err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		break
 	}
 
-	// Step 4: Anyone verifies
-	if !VerifySignatureMLDSA(message, sig, pub) {
+	// Step 4: Client unblinds
+	sig, err := MLDSAClientUnblind(state, response, bpk)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Step 5: Anyone verifies
+	if !VerifySignatureMLDSA(message, sig, bpk) {
+		t.Fatal("valid signature rejected")
+	}
+}
+
+func TestMLDSAConvenience(t *testing.T) {
+	key, err := GenerateMLDSAKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
+	message := []byte("convenience test")
+
+	sig, err := MLDSABlindSign(message, &key.PrivateKey65, bpk, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !VerifySignatureMLDSA(message, sig, bpk) {
 		t.Fatal("valid signature rejected")
 	}
 }
 
 func TestMLDSAVerifyRejectsTamperedMessage(t *testing.T) {
-	key := generateMLDSATestKey(t)
-	pub := key.PublicKey()
-	message := []byte("original message")
+	key, _ := GenerateMLDSAKey()
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
+	sig := mldsaTestSign(t, &key.PrivateKey65, bpk, []byte("original"))
 
-	blindedMsg, token, err := BlindMessageMLDSA(message, pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-	blindSig, err := SignBlindedMLDSA(blindedMsg, &key.PrivateKey65)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sig, err := UnblindSignatureMLDSA(blindSig, token, pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if VerifySignatureMLDSA([]byte("tampered message"), sig, pub) {
+	if VerifySignatureMLDSA([]byte("tampered"), sig, bpk) {
 		t.Fatal("signature verified on wrong message")
 	}
 }
 
 func TestMLDSAVerifyRejectsWrongKey(t *testing.T) {
-	key1 := generateMLDSATestKey(t)
-	key2 := generateMLDSATestKey(t)
-	message := []byte("hello")
+	key1, _ := GenerateMLDSAKey()
+	key2, _ := GenerateMLDSAKey()
+	bpk1 := MLDSABlindPublicKey(&key1.PrivateKey65)
+	bpk2 := MLDSABlindPublicKey(&key2.PrivateKey65)
 
-	blindedMsg, token, err := BlindMessageMLDSA(message, key1.PublicKey())
-	if err != nil {
-		t.Fatal(err)
-	}
-	blindSig, err := SignBlindedMLDSA(blindedMsg, &key1.PrivateKey65)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sig, err := UnblindSignatureMLDSA(blindSig, token, key1.PublicKey())
-	if err != nil {
-		t.Fatal(err)
-	}
+	sig := mldsaTestSign(t, &key1.PrivateKey65, bpk1, []byte("hello"))
 
-	if VerifySignatureMLDSA(message, sig, key2.PublicKey()) {
+	if VerifySignatureMLDSA([]byte("hello"), sig, bpk2) {
 		t.Fatal("signature verified with wrong key")
 	}
 }
 
 func TestMLDSAVerifyRejectsRandomSignature(t *testing.T) {
-	key := generateMLDSATestKey(t)
-	message := []byte("hello")
+	key, _ := GenerateMLDSAKey()
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
 
-	fakeSig := make([]byte, MLDSASignatureSize)
-	rand.Read(fakeSig)
-	if VerifySignatureMLDSA(message, fakeSig, key.PublicKey()) {
+	fake := make([]byte, MLDSASignatureSize)
+	rand.Read(fake)
+	if VerifySignatureMLDSA([]byte("hello"), fake, bpk) {
 		t.Fatal("random signature should not verify")
 	}
 }
 
 func TestMLDSAVerifyRejectsBadLength(t *testing.T) {
-	key := generateMLDSATestKey(t)
-	message := []byte("hello")
+	key, _ := GenerateMLDSAKey()
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
 
-	if VerifySignatureMLDSA(message, []byte("too short"), key.PublicKey()) {
+	if VerifySignatureMLDSA([]byte("hello"), []byte("short"), bpk) {
 		t.Fatal("short signature should not verify")
 	}
-	if VerifySignatureMLDSA(message, nil, key.PublicKey()) {
+	if VerifySignatureMLDSA([]byte("hello"), nil, bpk) {
 		t.Fatal("nil signature should not verify")
 	}
 }
 
-func TestMLDSASignBlindedRejectsBadSize(t *testing.T) {
-	key := generateMLDSATestKey(t)
-
-	_, err := SignBlindedMLDSA([]byte("too short"), &key.PrivateKey65)
-	if err == nil {
-		t.Fatal("expected error for wrong-sized blinded message")
-	}
-
-	_, err = SignBlindedMLDSA(make([]byte, 128), &key.PrivateKey65)
-	if err == nil {
-		t.Fatal("expected error for oversized blinded message")
-	}
-}
-
-func TestMLDSAUnblindRejectsBadSizes(t *testing.T) {
-	key := generateMLDSATestKey(t)
-	pub := key.PublicKey()
-
-	_, err := UnblindSignatureMLDSA([]byte("short"), make([]byte, mldsaTokenSize), pub)
-	if err == nil {
-		t.Fatal("expected error for wrong-sized blind signature")
-	}
-
-	_, err = UnblindSignatureMLDSA(make([]byte, mldsa.SignatureSize65), []byte("short"), pub)
-	if err == nil {
-		t.Fatal("expected error for wrong-sized blinding factor")
-	}
-}
-
 func TestMLDSAMultipleMessagesDistinct(t *testing.T) {
-	key := generateMLDSATestKey(t)
-	pub := key.PublicKey()
+	key, _ := GenerateMLDSAKey()
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
 
 	messages := [][]byte{
 		[]byte("message one"),
@@ -156,26 +146,12 @@ func TestMLDSAMultipleMessagesDistinct(t *testing.T) {
 
 	sigs := make([][]byte, len(messages))
 	for i, msg := range messages {
-		blindedMsg, token, err := BlindMessageMLDSA(msg, pub)
-		if err != nil {
-			t.Fatal(err)
-		}
-		blindSig, err := SignBlindedMLDSA(blindedMsg, &key.PrivateKey65)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sig, err := UnblindSignatureMLDSA(blindSig, token, pub)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sigs[i] = sig
-
-		if !VerifySignatureMLDSA(msg, sig, pub) {
+		sigs[i] = mldsaTestSign(t, &key.PrivateKey65, bpk, msg)
+		if !VerifySignatureMLDSA(msg, sigs[i], bpk) {
 			t.Fatalf("message %d: valid signature rejected", i)
 		}
 	}
 
-	// Signatures should be distinct
 	for i := 0; i < len(sigs); i++ {
 		for j := i + 1; j < len(sigs); j++ {
 			if bytes.Equal(sigs[i], sigs[j]) {
@@ -185,108 +161,76 @@ func TestMLDSAMultipleMessagesDistinct(t *testing.T) {
 	}
 }
 
-func TestMLDSABlindedMessageIsOpaque(t *testing.T) {
-	key := generateMLDSATestKey(t)
-	pub := key.PublicKey()
-	message := []byte("secret ballot")
+func TestMLDSAUnlinkability(t *testing.T) {
+	// Two blind signatures on the same message should differ
+	// (different random blinding each time)
+	key, _ := GenerateMLDSAKey()
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
+	msg := []byte("same message")
 
-	// The blinded message should not contain the original message
-	blindedMsg, _, err := BlindMessageMLDSA(message, pub)
-	if err != nil {
-		t.Fatal(err)
+	sig1 := mldsaTestSign(t, &key.PrivateKey65, bpk, msg)
+	sig2 := mldsaTestSign(t, &key.PrivateKey65, bpk, msg)
+
+	if bytes.Equal(sig1, sig2) {
+		t.Fatal("two blind signatures on same message are identical")
 	}
 
-	if bytes.Contains(blindedMsg, message) {
-		t.Fatal("blinded message contains original message")
-	}
-}
-
-func TestMLDSADifferentTokensProduceDifferentBlinding(t *testing.T) {
-	key := generateMLDSATestKey(t)
-	pub := key.PublicKey()
-	message := []byte("same message")
-
-	blinded1, _, err := BlindMessageMLDSA(message, pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-	blinded2, _, err := BlindMessageMLDSA(message, pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if bytes.Equal(blinded1, blinded2) {
-		t.Fatal("same message produced identical blinded messages (tokens should differ)")
+	if !VerifySignatureMLDSA(msg, sig1, bpk) || !VerifySignatureMLDSA(msg, sig2, bpk) {
+		t.Fatal("valid signatures rejected")
 	}
 }
 
 func TestMLDSAEmptyMessage(t *testing.T) {
-	key := generateMLDSATestKey(t)
-	pub := key.PublicKey()
+	key, _ := GenerateMLDSAKey()
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
 
-	blindedMsg, token, err := BlindMessageMLDSA([]byte{}, pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-	blindSig, err := SignBlindedMLDSA(blindedMsg, &key.PrivateKey65)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sig, err := UnblindSignatureMLDSA(blindSig, token, pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !VerifySignatureMLDSA([]byte{}, sig, pub) {
+	sig := mldsaTestSign(t, &key.PrivateKey65, bpk, []byte{})
+	if !VerifySignatureMLDSA([]byte{}, sig, bpk) {
 		t.Fatal("empty message signature rejected")
 	}
 }
 
 func TestMLDSASignatureSize(t *testing.T) {
-	key := generateMLDSATestKey(t)
-	pub := key.PublicKey()
-	message := []byte("size check")
+	key, _ := GenerateMLDSAKey()
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
 
-	blindedMsg, token, err := BlindMessageMLDSA(message, pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-	blindSig, err := SignBlindedMLDSA(blindedMsg, &key.PrivateKey65)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sig, err := UnblindSignatureMLDSA(blindSig, token, pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	sig := mldsaTestSign(t, &key.PrivateKey65, bpk, []byte("size check"))
 	if len(sig) != MLDSASignatureSize {
 		t.Fatalf("signature size = %d, want %d", len(sig), MLDSASignatureSize)
 	}
 }
 
-func BenchmarkMLDSAFullProtocol(b *testing.B) {
-	key, err := GenerateMLDSAKey()
+func TestMLDSAPublicKeySerialization(t *testing.T) {
+	key, _ := GenerateMLDSAKey()
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
+	msg := []byte("serialization test")
+
+	sig := mldsaTestSign(t, &key.PrivateKey65, bpk, msg)
+
+	// Serialize and deserialize the blind public key
+	b := bpk.Bytes()
+	bpk2, err := mldsa.ParseBlindPublicKey65(b)
 	if err != nil {
-		b.Fatal(err)
+		t.Fatal(err)
 	}
-	pub := key.PublicKey()
+
+	if !VerifySignatureMLDSA(msg, sig, bpk2) {
+		t.Fatal("signature failed verification with deserialized key")
+	}
+}
+
+func BenchmarkMLDSAFullProtocol(b *testing.B) {
+	key, _ := GenerateMLDSAKey()
+	bpk := MLDSABlindPublicKey(&key.PrivateKey65)
 	message := []byte("benchmark message")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		blindedMsg, token, err := BlindMessageMLDSA(message, pub)
+		sig, err := MLDSABlindSign(message, &key.PrivateKey65, bpk, 0)
 		if err != nil {
 			b.Fatal(err)
 		}
-		blindSig, err := SignBlindedMLDSA(blindedMsg, &key.PrivateKey65)
-		if err != nil {
-			b.Fatal(err)
-		}
-		sig, err := UnblindSignatureMLDSA(blindSig, token, pub)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if !VerifySignatureMLDSA(message, sig, pub) {
+		if !VerifySignatureMLDSA(message, sig, bpk) {
 			b.Fatal("verification failed")
 		}
 	}
