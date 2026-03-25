@@ -1,4 +1,6 @@
-github.com/KarpelesLab/mldsa v0.1.1 h1:ql1YN/5R2cQ74Bi05EUiMrOkcl++GrRVNBX4SCJALuU=
-github.com/KarpelesLab/mldsa v0.1.1/go.mod h1:x1T4Gyd86wpLwnk1LafWJCqD3EwvhZKXK+0QfHgqZBk=
-github.com/KarpelesLab/mldsa v0.2.0 h1:rOTLCBZmLLW7/IpUJ+Z/qslMQm/4s0zXPLA21a+V6HA=
-github.com/KarpelesLab/mldsa v0.2.0/go.mod h1:x1T4Gyd86wpLwnk1LafWJCqD3EwvhZKXK+0QfHgqZBk=
+github.com/KarpelesLab/lnp22 v0.1.0 h1:n9DYGsgqgGUC3awVVV9tIsdOvQnokDBjj2NMrNXCzBY=
+github.com/KarpelesLab/lnp22 v0.1.0/go.mod h1:i2Aki4aI5u6wXHQC1DxyymVil88PdjCS2H7XHfmDTA8=
+golang.org/x/crypto v0.49.0 h1:+Ng2ULVvLHnJ/ZFEq4KdcDd/cfjrrjjNSXNzxg0Y4U4=
+golang.org/x/crypto v0.49.0/go.mod h1:ErX4dUh2UM+CFYiXZRTcMpEcN8b/1gxEuv3nODoYtCA=
+golang.org/x/sys v0.42.0 h1:omrd2nAlyT5ESRdCLYdm3+fMfNFE/+Rf4bDIQImRJeo=
+golang.org/x/sys v0.42.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=

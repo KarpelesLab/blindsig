@@ -7,12 +7,13 @@
 //     Provides full unlinkability: the signer cannot correlate a signing
 //     session with the resulting signature.
 //
-//   - ML-DSA-65 blind signatures using an interactive Schnorr-over-lattice
-//     protocol. Provides full unlinkability via algebraic blinding (the client
-//     randomizes the commitment with A·α). Uses ML-DSA-65 key material with
-//     t = A·s1 (no s2 error term). Quantum-resistant (NIST security level 3).
-//     The protocol is 3-move: commit → challenge → respond, with possible
-//     retries on rejection sampling.
+//   - BLNS23 lattice-based blind signatures (Beullens-Lyubashevsky-Nguyen-Seiler,
+//     ePrint 2023/077) using NTRU pre-image sampling and NIZK proofs.
+//     Provides full unlinkability: the signer computes a short pre-image of a
+//     blinded commitment, and the user creates a zero-knowledge proof as the
+//     signature. The signer never sees any component of the final signature.
+//     Quantum-resistant, based on Ring-SIS, Ring-LWE, and NTRU assumptions.
+//     2-round protocol. Signature size ~15 KB.
 package blindsig
 
 import "errors"
