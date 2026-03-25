@@ -123,24 +123,24 @@ import (
 
 func main() {
     // Key generation
-    sk, pk, _ := blindsig.GenerateSchnorrKey()
+    sk, pk, _ := blindsig.GenerateEd25519Key()
 
     message := []byte("vote for candidate A")
 
     // Round 1 — Server: commit
-    signerState, commitment, _ := blindsig.SchnorrSignerCommit()
+    signerState, commitment, _ := blindsig.Ed25519SignerCommit()
 
     // Round 2 — Client: create blinded challenge
-    clientState, challenge, _ := blindsig.SchnorrClientChallenge(message, commitment, pk)
+    clientState, challenge, _ := blindsig.Ed25519ClientChallenge(message, commitment, pk)
 
     // Round 3 — Server: respond
-    response, _ := blindsig.SchnorrSignerRespond(signerState, challenge, sk)
+    response, _ := blindsig.Ed25519SignerRespond(signerState, challenge, sk)
 
     // Client: unblind
-    sig, _ := blindsig.SchnorrClientUnblind(clientState, response, pk)
+    sig, _ := blindsig.Ed25519ClientUnblind(clientState, response, pk)
 
     // Anyone: verify
-    valid := blindsig.SchnorrVerify(message, sig, pk)
+    valid := blindsig.Ed25519Verify(message, sig, pk)
     fmt.Println("Valid:", valid) // true
 }
 ```
@@ -148,8 +148,8 @@ func main() {
 Or using the convenience function:
 
 ```go
-sig, _ := blindsig.SchnorrBlindSign(message, sk)
-valid := blindsig.SchnorrVerify(message, sig, sk.PublicKey())
+sig, _ := blindsig.Ed25519BlindSign(message, sk)
+valid := blindsig.Ed25519Verify(message, sig, sk.PublicKey())
 ```
 
 ## secp256k1 blind signatures (BIP-340)
