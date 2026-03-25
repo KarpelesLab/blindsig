@@ -17,8 +17,13 @@
 //     ePrint 2023/077) using NTRU pre-image sampling and NIZK proofs.
 //     Interactive (2 rounds). ~50 KB signatures. Quantum-resistant.
 //
-// All three schemes provide full unlinkability: the signer cannot correlate
-// a signing session with the resulting signature.
+//   - BDHKE (Blind Diffie-Hellman Key Exchange) over Ed25519.
+//     Non-interactive (1 round). 32-byte tokens. Keyed verification
+//     (only the mint/signer can verify). Used in Cashu e-cash.
+//
+// All schemes provide blindness: the signer cannot learn the message.
+// RSA, Ed25519, secp256k1, and BLNS23 provide public verification and
+// full unlinkability. BDHKE provides keyed verification (mint-only).
 package blindsig
 
 import "errors"

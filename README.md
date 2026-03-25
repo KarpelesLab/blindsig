@@ -7,14 +7,15 @@
 
 Blind signature schemes in Go. A blind signature lets a signer sign a message **without learning what the message is**, and later, when the signature is revealed, the signer **cannot link it back** to the signing session that produced it.
 
-Four schemes are provided:
+Five schemes are provided:
 
-| Scheme | Assumption | Quantum-safe | Signature size | Rounds |
-|--------|-----------|:------------:|---------------:|:------:|
-| **RSA** (Chaum 1983) | Factoring | No | 384 B (3072-bit) | 1 |
-| **Ed25519** (Schnorr) | Discrete log | No | 64 B | 3 |
-| **secp256k1** (Schnorr/BIP-340) | Discrete log | No | 64 B | 3 |
-| **BLNS23** (Beullens et al. 2023) | Ring-SIS + Ring-LWE + NTRU | Yes | ~50 KB | 2 |
+| Scheme | Assumption | Quantum-safe | Signature/Token | Rounds | Verification |
+|--------|-----------|:------------:|----------------:|:------:|:------------:|
+| **RSA** (Chaum 1983) | Factoring | No | 384 B | 1 | Public |
+| **Ed25519** (Schnorr) | Discrete log | No | 64 B | 3 | Public |
+| **secp256k1** (Schnorr/BIP-340) | Discrete log | No | 64 B | 3 | Public |
+| **BDHKE** (Ed25519) | Discrete log | No | 32 B | 1 | Keyed (mint) |
+| **BLNS23** (Beullens et al. 2023) | Ring-SIS + Ring-LWE + NTRU | Yes | ~50 KB | 2 | Public |
 
 ## Installation
 
@@ -194,6 +195,47 @@ func main() {
 }
 ```
 
+## BDHKE blind tokens (Cashu-style e-cash)
+
+BDHKE (Blind Diffie-Hellman Key Exchange) is the blind signature scheme used in [Cashu](https://cashu.space/) e-cash. It is the simplest scheme in the package: the mint computes a single scalar multiplication on a blinded point, and the user unblinds by subtracting a known offset. Tokens are just 32 bytes.
+
+The tradeoff: **keyed verification**. Only the mint (who holds the secret key `k`) can verify tokens. This is natural for e-cash where the mint is always the verifier.
+
+### How it works
+
+```
+User                                Mint (secret k, public K=kG)
+----                                ----
+Y = hash_to_curve(secret)
+B' = Y + rG                         (blind)
+                     B' ──►
+                                    C' = k·B'    (sign)
+                     ◄── C'
+C = C' - r·K = k·Y                  (unblind)
+
+token = (secret, C)
+```
+
+Verification (mint only): `C == k · hash_to_curve(secret)`.
+
+### Usage
+
+```go
+sk, pk, _ := blindsig.GenerateBDHKEMintKey()
+
+// User: blind
+state, blinded, _ := blindsig.BDHKEBlind([]byte("token-secret-42"))
+
+// Mint: sign (never sees the secret)
+blindSig, _ := blindsig.BDHKESign(blinded, sk)
+
+// User: unblind
+token, _ := blindsig.BDHKEUnblind([]byte("token-secret-42"), blindSig, state, pk)
+
+// Mint: verify (keyed — requires secret key)
+valid := blindsig.BDHKEVerify(token, sk)
+```
+
 ## BLNS23 lattice-based blind signatures
 
 The BLNS23 scheme ([ePrint 2023/077](https://eprint.iacr.org/2023/077)) is a post-quantum blind signature based on standard lattice assumptions (Ring-SIS, Ring-LWE, and NTRU). Unlike RSA, lattice-based schemes don't have algebraic homomorphism, so the blinding mechanism is fundamentally different.
@@ -284,17 +326,18 @@ The three schemes achieve blindness through different mechanisms:
 
 ### Comparison table
 
-| Property | RSA | Ed25519 | secp256k1 | BLNS23 |
-|----------|-----|---------|-----------|--------|
-| Blinding mechanism | Multiply by r^e | Shift R,e by +α,+β | Shift R,e by -α,-β | Hash commitment + NIZK |
-| What the signer sees | m·r^e (random) | e (shifted challenge) | e (shifted challenge) | B·r + H(G(r),μ) (random) |
-| What's in the signature | m^d | (R', s') | (R'.x, s') | (ρ, π) — hash + ZK proof |
-| Unlinkability source | r^e cancels | α, β cancel | α, β cancel | ZK proof reveals nothing |
-| Quantum-safe | No | No | No | Yes |
-| Rounds | 1 | 3 | 3 | 2 |
-| Key size (public) | 384 B | 32 B | 33 B | ~2 KB |
-| Signature size | 384 B | 64 B | 64 B | ~50 KB |
-| Hardness assumption | Factoring | DLP (Ed25519) | DLP (secp256k1) | Ring-SIS + LWE + NTRU |
+| Property | RSA | Ed25519 | secp256k1 | BDHKE | BLNS23 |
+|----------|-----|---------|-----------|-------|--------|
+| Blinding mechanism | Multiply by r^e | Shift R,e by +α,+β | Shift R,e by -α,-β | Add rG to Y | Hash commitment + NIZK |
+| What the signer sees | m·r^e | e (shifted) | e (shifted) | Y + rG (random point) | B·r + H(G(r),μ) |
+| What's in the signature | m^d | (R', s') | (R'.x, s') | C = k·Y (32 B point) | (ρ, π) — ZK proof |
+| Unlinkability source | r^e cancels | α, β cancel | α, β cancel | rG cancels via r·K | ZK proof |
+| Verification | Public | Public | Public | Keyed (mint only) | Public |
+| Quantum-safe | No | No | No | No | Yes |
+| Rounds | 1 | 3 | 3 | 1 | 2 |
+| Key size (public) | 384 B | 32 B | 33 B | 32 B | ~2 KB |
+| Signature/token size | 384 B | 64 B | 64 B | 32 B | ~50 KB |
+| Hardness assumption | Factoring | DLP (Ed25519) | DLP (secp256k1) | DLP (Ed25519) | Ring-SIS + LWE + NTRU |
 
 ### When to use which
 
@@ -302,7 +345,9 @@ The three schemes achieve blindness through different mechanisms:
 
 - **secp256k1**: When you need compatibility with the Bitcoin/Decred ecosystem (BIP-340 Schnorr). Same security and size as Ed25519 but uses the secp256k1 curve.
 
-- **RSA**: When you need a non-interactive protocol (single round). The 384-byte signatures are larger but still compact. Useful when round-trip latency is a concern.
+- **BDHKE**: For e-cash / token systems where the issuer is also the verifier. The simplest scheme, smallest tokens (32 bytes), and non-interactive. Keyed verification is the tradeoff.
+
+- **RSA**: When you need non-interactive public-verification blind signatures. Larger keys and signatures than Schnorr but no interaction required.
 
 - **BLNS23**: When you need quantum resistance. The larger signatures (~50 KB) and two-round protocol are the cost of post-quantum security. As lattice-based proof systems improve, these sizes will shrink.
 
