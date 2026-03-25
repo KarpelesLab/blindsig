@@ -1,3 +1,5 @@
+github.com/KarpelesLab/edwards25519 v1.1.7 h1:03Yr0HxxIvzuupdqLKRjC9P6Em3rl+CpgDZEA/xqkVs=
+github.com/KarpelesLab/edwards25519 v1.1.7/go.mod h1:NikirayExusFY4vgi5ENCCMxOjkcF8uD6yA/y+a2iJ8=
 github.com/KarpelesLab/lnp22 v0.1.0 h1:n9DYGsgqgGUC3awVVV9tIsdOvQnokDBjj2NMrNXCzBY=
 github.com/KarpelesLab/lnp22 v0.1.0/go.mod h1:i2Aki4aI5u6wXHQC1DxyymVil88PdjCS2H7XHfmDTA8=
 golang.org/x/crypto v0.49.0 h1:+Ng2ULVvLHnJ/ZFEq4KdcDd/cfjrrjjNSXNzxg0Y4U4=
