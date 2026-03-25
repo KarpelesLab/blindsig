@@ -9,6 +9,10 @@
 //   - Schnorr blind signatures over Ed25519. Interactive (3 rounds).
 //     64-byte signatures. Not quantum-safe, but efficient and compact.
 //
+//   - Schnorr blind signatures over secp256k1 (BIP-340 compatible).
+//     Interactive (3 rounds). 64-byte signatures with x-only R.
+//     Not quantum-safe. Compatible with Bitcoin/Decred Schnorr.
+//
 //   - BLNS23 lattice-based blind signatures (Beullens-Lyubashevsky-Nguyen-Seiler,
 //     ePrint 2023/077) using NTRU pre-image sampling and NIZK proofs.
 //     Interactive (2 rounds). ~50 KB signatures. Quantum-resistant.

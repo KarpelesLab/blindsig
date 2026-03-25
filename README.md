@@ -7,12 +7,13 @@
 
 Blind signature schemes in Go. A blind signature lets a signer sign a message **without learning what the message is**, and later, when the signature is revealed, the signer **cannot link it back** to the signing session that produced it.
 
-Three schemes are provided:
+Four schemes are provided:
 
 | Scheme | Assumption | Quantum-safe | Signature size | Rounds |
 |--------|-----------|:------------:|---------------:|:------:|
 | **RSA** (Chaum 1983) | Factoring | No | 384 B (3072-bit) | 1 |
-| **Schnorr** (Ed25519) | Discrete log | No | 64 B | 3 |
+| **Ed25519** (Schnorr) | Discrete log | No | 64 B | 3 |
+| **secp256k1** (Schnorr/BIP-340) | Discrete log | No | 64 B | 3 |
 | **BLNS23** (Beullens et al. 2023) | Ring-SIS + Ring-LWE + NTRU | Yes | ~50 KB | 2 |
 
 ## Installation
@@ -151,6 +152,48 @@ sig, _ := blindsig.SchnorrBlindSign(message, sk)
 valid := blindsig.SchnorrVerify(message, sig, sk.PublicKey())
 ```
 
+## secp256k1 blind signatures (BIP-340)
+
+The secp256k1 scheme uses the same blind Schnorr protocol as Ed25519 but over the secp256k1 curve with BIP-340 conventions: x-only R encoding, even-y enforcement, and BLAKE-256 challenge hash. Signatures are compatible with the Bitcoin/Decred Schnorr ecosystem.
+
+The sign convention is `s = k - e·x` (subtraction, vs Ed25519's addition), so the blinding signs are flipped: `R' = R - αG - βP` and `s' = s - α`. The client retries blinding if `R'.y` is odd (about 50% of the time, adding ~1 retry on average).
+
+Note: secp256k1 blind signing takes a **32-byte hash** (pre-hashed message), not the raw message.
+
+### Usage
+
+```go
+package main
+
+import (
+    "crypto/sha256"
+    "fmt"
+    "github.com/KarpelesLab/blindsig"
+)
+
+func main() {
+    sk, pk, _ := blindsig.GenerateSecp256k1Key()
+
+    hash := sha256.Sum256([]byte("vote for candidate A"))
+
+    // Round 1 — Server: commit
+    signerState, commitment, _ := blindsig.Secp256k1SignerCommit()
+
+    // Round 2 — Client: create blinded challenge
+    clientState, challenge, _ := blindsig.Secp256k1ClientChallenge(hash[:], commitment, pk)
+
+    // Round 3 — Server: respond
+    response, _ := blindsig.Secp256k1SignerRespond(signerState, challenge, sk)
+
+    // Client: unblind
+    sig, _ := blindsig.Secp256k1ClientUnblind(clientState, response, pk)
+
+    // Anyone: verify
+    valid := blindsig.Secp256k1Verify(hash[:], sig, pk)
+    fmt.Println("Valid:", valid) // true
+}
+```
+
 ## BLNS23 lattice-based blind signatures
 
 The BLNS23 scheme ([ePrint 2023/077](https://eprint.iacr.org/2023/077)) is a post-quantum blind signature based on standard lattice assumptions (Ring-SIS, Ring-LWE, and NTRU). Unlike RSA, lattice-based schemes don't have algebraic homomorphism, so the blinding mechanism is fundamentally different.
@@ -241,23 +284,25 @@ The three schemes achieve blindness through different mechanisms:
 
 ### Comparison table
 
-| Property | RSA | Schnorr | BLNS23 |
-|----------|-----|---------|--------|
-| Blinding mechanism | Multiply by r^e | Shift R and e by α, β | Hash commitment + NIZK proof |
-| What the signer sees | m·r^e (random) | e (shifted challenge) | B·r + H(G(r), μ) (random) |
-| What's in the signature | m^d | (R', s') — shifted point + scalar | (ρ, π) — hash + ZK proof |
-| Unlinkability source | r^e cancels perfectly | α, β cancel perfectly | ZK proof reveals nothing |
-| Quantum-safe | No | No | Yes |
-| Rounds | 1 | 3 | 2 |
-| Key size (public) | 384 B | 32 B | ~2 KB |
-| Signature size | 384 B | 64 B | ~50 KB |
-| Hardness assumption | Factoring | Discrete log (Ed25519) | Ring-SIS + Ring-LWE + NTRU |
+| Property | RSA | Ed25519 | secp256k1 | BLNS23 |
+|----------|-----|---------|-----------|--------|
+| Blinding mechanism | Multiply by r^e | Shift R,e by +α,+β | Shift R,e by -α,-β | Hash commitment + NIZK |
+| What the signer sees | m·r^e (random) | e (shifted challenge) | e (shifted challenge) | B·r + H(G(r),μ) (random) |
+| What's in the signature | m^d | (R', s') | (R'.x, s') | (ρ, π) — hash + ZK proof |
+| Unlinkability source | r^e cancels | α, β cancel | α, β cancel | ZK proof reveals nothing |
+| Quantum-safe | No | No | No | Yes |
+| Rounds | 1 | 3 | 3 | 2 |
+| Key size (public) | 384 B | 32 B | 33 B | ~2 KB |
+| Signature size | 384 B | 64 B | 64 B | ~50 KB |
+| Hardness assumption | Factoring | DLP (Ed25519) | DLP (secp256k1) | Ring-SIS + LWE + NTRU |
 
 ### When to use which
 
-- **Schnorr**: Best for most applications today. Tiny 64-byte signatures, fast operations, and the Ed25519 curve is widely deployed. Use this unless you have a specific reason not to.
+- **Ed25519**: Best for most applications today. Tiny 64-byte signatures, fast operations, and widely deployed.
 
-- **RSA**: When you need a non-interactive protocol (single round). The 384-byte signatures are larger than Schnorr but still compact. Useful when round-trip latency is a concern.
+- **secp256k1**: When you need compatibility with the Bitcoin/Decred ecosystem (BIP-340 Schnorr). Same security and size as Ed25519 but uses the secp256k1 curve.
+
+- **RSA**: When you need a non-interactive protocol (single round). The 384-byte signatures are larger but still compact. Useful when round-trip latency is a concern.
 
 - **BLNS23**: When you need quantum resistance. The larger signatures (~50 KB) and two-round protocol are the cost of post-quantum security. As lattice-based proof systems improve, these sizes will shrink.
 
