@@ -21,16 +21,16 @@ type Secp256k1PrivateKey struct {
 
 // Secp256k1SignerState holds the signer's ephemeral state for one signing session.
 type Secp256k1SignerState struct {
-	k secp256k1.ModNScalar // nonce
+	k secp256k1.ModNScalar    // nonce
 	R secp256k1.JacobianPoint // commitment R = kG
 }
 
 // Secp256k1ClientState holds the client's state between protocol rounds.
 type Secp256k1ClientState struct {
-	alpha  secp256k1.ModNScalar // blinding scalar for response
-	beta   secp256k1.ModNScalar // blinding scalar for challenge
+	alpha  secp256k1.ModNScalar    // blinding scalar for response
+	beta   secp256k1.ModNScalar    // blinding scalar for challenge
 	rPrime secp256k1.JacobianPoint // R' (blinded commitment)
-	ePrime secp256k1.ModNScalar // e' = H(R'.x || msg)
+	ePrime secp256k1.ModNScalar    // e' = H(R'.x || msg)
 }
 
 // Secp256k1Signature is a blind signature (64 bytes: R'.x || s').

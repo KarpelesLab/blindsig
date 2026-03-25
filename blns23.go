@@ -25,22 +25,22 @@ var (
 )
 
 const (
-	blns23D     = 512   // ring degree
-	blns23Sigma = 232.0 // Gaussian std dev for pre-image sampling
-	blns23Kappa = 60    // NIZK challenge weight
-	blns23RhoLen = 32   // length of ρ = G(r) in bytes
+	blns23D      = 512   // ring degree
+	blns23Sigma  = 232.0 // Gaussian std dev for pre-image sampling
+	blns23Kappa  = 60    // NIZK challenge weight
+	blns23RhoLen = 32    // length of ρ = G(r) in bytes
 )
 
 // BLNS23Params holds the pre-computed scheme parameters.
 type BLNS23Params struct {
-	SigRing   *ring.BigRing   // R_q: d=512, q=7933
-	ProofRing *ring.BigRing   // R_{q̂}: d=512, q̂=q·q2
-	Q         *big.Int
-	Q2        *big.Int
-	QHat      *big.Int
-	Sigma     float64         // pre-image Gaussian std dev
-	BetaRSq   *big.Int        // L2² norm bound on r
-	BetaSSq   *big.Int        // L2² norm bound on s
+	SigRing     *ring.BigRing // R_q: d=512, q=7933
+	ProofRing   *ring.BigRing // R_{q̂}: d=512, q̂=q·q2
+	Q           *big.Int
+	Q2          *big.Int
+	QHat        *big.Int
+	Sigma       float64         // pre-image Gaussian std dev
+	BetaRSq     *big.Int        // L2² norm bound on r
+	BetaSSq     *big.Int        // L2² norm bound on s
 	ProofParams *tworing.Params // NIZK parameters
 }
 
@@ -83,7 +83,7 @@ type BLNS23ClientState struct {
 
 // BLNS23Signature is the blind signature on a message.
 type BLNS23Signature struct {
-	Rho   []byte        // G(r) — 32 bytes
+	Rho   []byte         // G(r) — 32 bytes
 	Proof *tworing.Proof // NIZK proof π₂
 }
 
@@ -111,7 +111,7 @@ func BLNS23DefaultParams() *BLNS23Params {
 	// The pre-image s has coefficients up to ~q/2 with simplified Babai rounding.
 	// (A proper Falcon ffSampler would produce shorter vectors, ~σ.)
 	// σ_proof must be ≥ 2·κ·max(witness_inf_norm).
-	maxWitInfNorm := int64(7933 / 2) // conservative: q/2
+	maxWitInfNorm := int64(7933 / 2)                       // conservative: q/2
 	sigmaProof := float64(4 * blns23Kappa * maxWitInfNorm) // generous margin
 	boundZ := big.NewInt(int64(sigmaProof * 4))            // 4× for good acceptance rate
 
