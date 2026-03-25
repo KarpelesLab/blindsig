@@ -1,5 +1,10 @@
 # blindsig
 
+[![Tests](https://github.com/KarpelesLab/blindsig/actions/workflows/test.yml/badge.svg)](https://github.com/KarpelesLab/blindsig/actions/workflows/test.yml)
+[![Coverage Status](https://coveralls.io/repos/github/KarpelesLab/blindsig/badge.svg?branch=master)](https://coveralls.io/github/KarpelesLab/blindsig?branch=master)
+[![Go Reference](https://pkg.go.dev/badge/github.com/KarpelesLab/blindsig.svg)](https://pkg.go.dev/github.com/KarpelesLab/blindsig)
+[![Go Report Card](https://goreportcard.com/badge/github.com/KarpelesLab/blindsig)](https://goreportcard.com/report/github.com/KarpelesLab/blindsig)
+
 Blind signature schemes in Go. A blind signature lets a signer sign a message **without learning what the message is**, and later, when the signature is revealed, the signer **cannot link it back** to the signing session that produced it.
 
 Three schemes are provided:
